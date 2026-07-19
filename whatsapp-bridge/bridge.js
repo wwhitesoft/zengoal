@@ -68,7 +68,41 @@ async function sendVoice(jid, text) {
   }
 }
 
-const sendText = (jid, text) => sock.sendMessage(jid, { text });
+async function sendText(jid, text) {
+  try {
+    await sock.sendMessage(jid, { text });
+  } catch (e) {
+    console.error('sendText failed, retrying in 3s:', e.message);
+    await new Promise(r => setTimeout(r, 3000));
+    try { await sock.sendMessage(jid, { text }); }
+    catch (e2) { console.error('sendText retry failed:', e2.message); }
+  }
+}
+
+// ---------- Gemini intent router: business idea vs casual chat ----------
+async function routeText(text) {
+  const r = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text:
+          `You are ZenGoal, an autonomous AI chief-of-staff on WhatsApp. ` +
+          `You turn business ideas into goals, build an agent pipeline and ship a finished product. ` +
+          `Classify the user's message. If it describes a business idea, product, or something to build, intent is "idea". ` +
+          `Otherwise (greetings, questions, chit-chat) intent is "chat" and write a short friendly reply (max 2 sentences) ` +
+          `as ZenGoal, inviting them to send a voice memo with a business idea.\n` +
+          `Reply ONLY with JSON: {"intent":"idea"|"chat","reply":"..."}\n\nUser message: ${text}` }] }],
+        generationConfig: { responseMimeType: 'application/json' },
+      }),
+    },
+  );
+  const j = await r.json();
+  try {
+    return JSON.parse(j?.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
+  } catch { return { intent: 'idea' }; }
+}
 
 // ---------- ZenGoal pipeline driver ----------
 async function runIdea(jid, { audioBuf, mime, text }) {
@@ -162,8 +196,13 @@ async function startWA() {
           runIdea(jid, { audioBuf: buf, mime: audioMsg.mimetype?.split(';')[0] || 'audio/ogg' })
             .catch(e => sendText(jid, `❌ ${e.message}`));
         } else if (text.trim()) {
-          await sendText(jid, '📝 Idea received — setting your goal...');
-          runIdea(jid, { text }).catch(e => sendText(jid, `❌ ${e.message}`));
+          const route = await routeText(text).catch(() => ({ intent: 'idea' }));
+          if (route.intent === 'chat' && route.reply) {
+            await sendText(jid, route.reply);
+          } else {
+            await sendText(jid, '📝 Idea received — setting your goal...');
+            runIdea(jid, { text }).catch(e => sendText(jid, `❌ ${e.message}`));
+          }
         }
       } catch (e) { console.error('msg handler:', e); }
     }
@@ -181,5 +220,8 @@ app.get('/qr', async (_, res) => {
     <h2>Scan with WhatsApp → Linked devices</h2><img src="${png}"></div>`);
 });
 app.listen(PORT, () => console.log('bridge http on', PORT));
+
+process.on('unhandledRejection', e => console.error('unhandledRejection:', e?.message || e));
+process.on('uncaughtException', e => console.error('uncaughtException:', e?.message || e));
 
 startWA().catch(e => { console.error(e); process.exit(1); });
