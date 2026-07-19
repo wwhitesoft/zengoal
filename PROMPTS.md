@@ -73,6 +73,21 @@ in the commit history of this repository.
 
 ---
 
+## Chat history
+
+The prototype was driven entirely from a **WhatsApp chat with our AI dev agent** —
+the same conversational workflow the product itself demonstrates. Here is the
+actual chat where the build was specified and the plan approved:
+
+![Build chat on WhatsApp](docs/build-chat-whatsapp.jpg)
+
+The agent decomposed the request into a 6-step plan (scaffolding → Flask backend
+with Gemini planner → Gemini worker loop → live board → public preview URL →
+Cloud Run deploy) and waited for explicit approval before starting — the same
+approval-gate philosophy ZenGoal ships with.
+
+---
+
 ## Gemini models used in the product
 
 | Step | Model |
