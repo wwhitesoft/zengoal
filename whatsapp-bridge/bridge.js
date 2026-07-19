@@ -211,6 +211,20 @@ async function startWA() {
 
 // ---------- HTTP: health + QR pairing page ----------
 const app = express();
+app.get('/', (_, res) => {
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>ZenGoal — WhatsApp channel</title>
+  <style>body{font-family:'Helvetica Neue',Arial,sans-serif;background:#14141c;color:#f0eff8;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;text-align:center}
+  .card{max-width:560px;padding:40px}h1{font-size:40px;letter-spacing:-1px}h1 span{color:#b9a8ff}
+  p{color:#b9b8c4;line-height:1.6}.ok{color:#6ee7a0;font-weight:700}.a{display:inline-block;margin:8px;padding:12px 22px;border-radius:10px;background:#5b3df5;color:#fff;text-decoration:none;font-weight:700}
+  .a.ghost{background:transparent;border:1px solid #5b3df5}</style></head><body><div class="card">
+  <h1>zen<span>goal</span> · WhatsApp channel</h1>
+  <p class="ok">${connected ? '✅ Bot online — WhatsApp linked and listening' : '⏳ Waiting for WhatsApp pairing'}</p>
+  <p>Send a <b>voice memo</b> with your business idea to the linked number: it becomes a goal, an AI agent pipeline builds the product, and you approve it — all on WhatsApp, all with Gemini.</p>
+  <a class="a" href="${ZENGOAL_URL}">Open the live web demo</a>
+  <a class="a ghost" href="/qr">Pairing QR</a>
+  <p style="font-size:13px">Stanford × DeepMind Hackathon · Built with Google Gemini · <a style="color:#b9a8ff" href="https://github.com/wwhitesoft/zengoal">GitHub repo</a></p>
+  </div></body></html>`);
+});
 app.get('/health', (_, res) => res.json({ ok: true, connected }));
 app.get('/qr', async (_, res) => {
   if (connected) return res.send('<h2 style="font-family:sans-serif">✅ WhatsApp connected — send a voice memo!</h2>');
