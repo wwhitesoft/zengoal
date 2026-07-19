@@ -18,6 +18,10 @@ This is a toy-scale rebuild of the autonomous loop that runs a real company ever
 - **Web app**: https://zengoal-283636345380.us-central1.run.app — record your idea in the browser, watch the agents work
 - **WhatsApp channel**: link a number at `/qr` on the bridge service, then just send a voice memo on WhatsApp — you get live milestones, the preview link, and a **spoken voice-note reply** (Gemini TTS). Reply "approve" to ship.
 
+## Prompt history
+
+The full prompt history used to build this prototype is in [PROMPTS.md](PROMPTS.md) — 9 prompts, in build order, matching the commit history.
+
 ## Architecture
 
 ```
