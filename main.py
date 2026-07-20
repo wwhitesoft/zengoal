@@ -7,6 +7,7 @@ Toy-scale rebuild of the Codezen autonomous loop, powered entirely by Gemini.
 import json
 import os
 import re
+import sqlite3
 import threading
 import time
 import uuid
@@ -21,17 +22,93 @@ model = genai.GenerativeModel(MODEL_NAME)
 
 app = Flask(__name__)
 
-GOALS = {}  # goal_id -> state dict (in-memory, demo scale)
+# ── In-memory store (active goals during pipeline execution) ──────────────────
+GOALS: dict = {}
+
+# ── SQLite persistence ────────────────────────────────────────────────────────
+DB_PATH = os.environ.get("DB_PATH", "zengoal.db")
 
 
-def _extract_json(text):
+def db_init() -> None:
+    con = sqlite3.connect(DB_PATH)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS goals (
+            id           TEXT PRIMARY KEY,
+            status       TEXT,
+            goal         TEXT,
+            idea_summary TEXT,
+            transcript   TEXT,
+            tasks        TEXT,
+            logs         TEXT,
+            artifact     TEXT,
+            created      REAL
+        )
+    """)
+    con.commit()
+    con.close()
+
+
+db_init()
+
+
+def db_save(g: dict) -> None:
+    """Persist / update a goal record to SQLite."""
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        "INSERT OR REPLACE INTO goals VALUES (?,?,?,?,?,?,?,?,?)",
+        (
+            g["id"], g["status"], g["goal"], g["idea_summary"],
+            g["transcript"], json.dumps(g["tasks"]), json.dumps(g["logs"]),
+            g["artifact"], g["created"],
+        ),
+    )
+    con.commit()
+    con.close()
+
+
+def db_load(goal_id: str) -> dict | None:
+    """Load a goal from SQLite (used when not in in-memory GOALS)."""
+    con = sqlite3.connect(DB_PATH)
+    row = con.execute("SELECT * FROM goals WHERE id=?", (goal_id,)).fetchone()
+    con.close()
+    if not row:
+        return None
+    return {
+        "id":           row[0],
+        "status":       row[1],
+        "goal":         row[2],
+        "idea_summary": row[3],
+        "transcript":   row[4],
+        "tasks":        json.loads(row[5] or "[]"),
+        "logs":         json.loads(row[6] or "[]"),
+        "artifact":     row[7],
+        "created":      row[8],
+    }
+
+
+def db_list_recent(limit: int = 20) -> list[dict]:
+    """Return last N goals ordered by creation time."""
+    con = sqlite3.connect(DB_PATH)
+    rows = con.execute(
+        "SELECT id, status, goal, created FROM goals ORDER BY created DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    con.close()
+    return [{"id": r[0], "status": r[1], "goal": r[2], "created": r[3]} for r in rows]
+
+
+# ── Helper utilities ──────────────────────────────────────────────────────────
+
+def _extract_json(text: str) -> dict:
     m = re.search(r"\{.*\}", text, re.DOTALL)
     return json.loads(m.group(0)) if m else json.loads(text)
 
 
-def log(g, msg):
+def log(g: dict, msg: str) -> None:
     g["logs"].append({"t": time.strftime("%H:%M:%S"), "msg": msg})
 
+
+# ── Prompts ───────────────────────────────────────────────────────────────────
 
 PLANNER_PROMPT = """You are ZenGoal, an autonomous AI chief-of-staff (like the system that runs a real
 software company, Codezen). A founder just sent you a spoken business idea.
@@ -86,13 +163,17 @@ small touches ok), REAL copy from the Copywriter (never lorem ipsum).
 Return ONLY the HTML document, starting with <!doctype html>."""
 
 
-def run_pipeline(goal_id):
+# ── Core pipeline ─────────────────────────────────────────────────────────────
+
+def run_pipeline(goal_id: str) -> None:
     g = GOALS[goal_id]
     try:
         context = ""
         for i, task in enumerate(g["tasks"]):
             task["status"] = "running"
             log(g, f"[{task['agent']}] started: {task['title']}")
+            db_save(g)  # checkpoint
+
             is_last = i == len(g["tasks"]) - 1
             if is_last:
                 prompt = ASSEMBLER_PROMPT.format(goal=g["goal"], context=context)
@@ -100,108 +181,177 @@ def run_pipeline(goal_id):
                 prompt = WORKER_PROMPT.format(
                     agent=task["agent"], goal=g["goal"], summary=g["idea_summary"],
                     context=context or "(you are the first agent)",
-                    title=task["title"], description=task["description"])
+                    title=task["title"], description=task["description"],
+                )
+
             out = model.generate_content(prompt).text
+
             if is_last:
-                html = re.sub(r"^```(html)?|```$", "", out.strip(), flags=re.MULTILINE).strip()
+                html = re.sub(
+                    r"^```(html)?|```$", "", out.strip(), flags=re.MULTILINE
+                ).strip()
                 g["artifact"] = html
                 task["output"] = "Deliverable assembled and shipped to preview URL."
             else:
                 task["output"] = out
                 context += f"\n\n### {task['agent']} — {task['title']}\n{out}"
+
             task["status"] = "done"
             log(g, f"[{task['agent']}] done: {task['title']}")
+
         g["status"] = "awaiting_approval"
         log(g, f"Goal completed — Job {goal_id[:8]} — awaiting your approval.")
-    except Exception as e:  # demo resilience
+    except Exception as e:
         g["status"] = "failed"
         log(g, f"Pipeline error: {e}")
+    finally:
+        db_save(g)  # persist terminal state
+
+
+def _plan_and_run(goal_id: str, audio_bytes: bytes | None,
+                  audio_mime: str, text: str) -> None:
+    g = GOALS[goal_id]
+    try:
+        if audio_bytes:
+            log(g, "Voice memo received — Gemini transcribing...")
+            resp = model.generate_content([
+                "Transcribe this voice memo exactly. Return only the transcript text.",
+                {"mime_type": audio_mime, "data": audio_bytes},
+            ])
+            transcript = resp.text.strip()
+        else:
+            transcript = text
+
+        g["transcript"] = transcript
+        log(g, f'Idea captured: "{transcript[:140]}"')
+        log(g, "Planner (Gemini) distilling goal and building pipeline...")
+
+        plan_json = _extract_json(
+            model.generate_content(PLANNER_PROMPT.format(idea=transcript)).text
+        )
+        g["goal"] = plan_json["goal"]
+        g["idea_summary"] = plan_json.get("idea_summary", "")
+        g["tasks"] = [
+            {
+                "title":       t["title"],
+                "description": t["description"],
+                "agent":       t.get("agent", "Developer"),
+                "status":      "queued",
+                "output":      None,
+            }
+            for t in plan_json["tasks"]
+        ]
+        log(g, f"Goal set: {g['goal']}")
+        log(g, f"Pipeline created: {len(g['tasks'])} tasks. Agents dispatched.")
+        g["status"] = "running"
+        db_save(g)
+        run_pipeline(goal_id)
+    except Exception as e:
+        g["status"] = "failed"
+        log(g, f"Planning error: {e}")
+        db_save(g)
+
+
+# ── Routes ────────────────────────────────────────────────────────────────────
+
+def _handle_idea_request():
+    """Shared logic for /idea and /api/idea."""
+    goal_id = uuid.uuid4().hex
+    g = {
+        "id":           goal_id,
+        "status":       "planning",
+        "goal":         None,
+        "idea_summary": None,
+        "transcript":   None,
+        "tasks":        [],
+        "logs":         [],
+        "artifact":     None,
+        "created":      time.time(),
+    }
+    GOALS[goal_id] = g
+
+    audio = request.files.get("audio")
+    text  = (request.form.get("text") or "").strip()
+
+    # Also support JSON body { "text": "..." }
+    if not audio and not text and request.is_json:
+        text = (request.json or {}).get("text", "").strip()
+
+    audio_bytes = audio.read() if audio else None
+    audio_mime  = (audio.mimetype if audio else None) or "audio/ogg"
+
+    if not audio_bytes and not text:
+        return jsonify({"error": "send an audio file (field 'audio') or text (field 'text')"}), 400
+
+    threading.Thread(
+        target=_plan_and_run,
+        args=(goal_id, audio_bytes, audio_mime, text),
+        daemon=True,
+    ).start()
+
+    return jsonify({"goal_id": goal_id, "status": "planning"})
 
 
 @app.route("/idea", methods=["POST"])
 def idea():
-    goal_id = uuid.uuid4().hex
-    g = {"id": goal_id, "status": "planning", "goal": None, "idea_summary": None,
-         "transcript": None, "tasks": [], "logs": [], "artifact": None,
-         "created": time.time()}
-    GOALS[goal_id] = g
+    """Original endpoint — kept for backward compatibility."""
+    return _handle_idea_request()
 
-    audio = request.files.get("audio")
-    text = (request.form.get("text") or "").strip()
 
-    def plan():
-        try:
-            if audio_bytes:
-                log(g, "Voice memo received — Gemini transcribing...")
-                resp = model.generate_content([
-                    "Transcribe this voice memo exactly. Return only the transcript text.",
-                    {"mime_type": audio_mime, "data": audio_bytes}])
-                transcript = resp.text.strip()
-            else:
-                transcript = text
-            g["transcript"] = transcript
-            log(g, f'Idea captured: "{transcript[:140]}"')
-            log(g, "Planner (Gemini) distilling goal and building pipeline...")
-            plan = _extract_json(model.generate_content(
-                PLANNER_PROMPT.format(idea=transcript)).text)
-            g["goal"] = plan["goal"]
-            g["idea_summary"] = plan.get("idea_summary", "")
-            g["tasks"] = [{"title": t["title"], "description": t["description"],
-                           "agent": t.get("agent", "Developer"), "status": "queued",
-                           "output": None} for t in plan["tasks"]]
-            log(g, f"Goal set: {g['goal']}")
-            log(g, f"Pipeline created: {len(g['tasks'])} tasks. Agents dispatched.")
-            g["status"] = "running"
-            run_pipeline(goal_id)
-        except Exception as e:
-            g["status"] = "failed"
-            log(g, f"Planning error: {e}")
-
-    audio_bytes = audio.read() if audio else None
-    audio_mime = (audio.mimetype if audio else None) or "audio/ogg"
-    if not audio_bytes and not text:
-        return jsonify({"error": "send an audio file or text"}), 400
-    threading.Thread(target=plan, daemon=True).start()
-    return jsonify({"goal_id": goal_id})
+@app.route("/api/idea", methods=["POST"])
+def api_idea():
+    """Primary REST endpoint. Accepts multipart (audio + text) or JSON {text}."""
+    return _handle_idea_request()
 
 
 @app.route("/api/goal/<goal_id>")
-def goal_state(goal_id):
-    g = GOALS.get(goal_id)
+def goal_state(goal_id: str):
+    g = GOALS.get(goal_id) or db_load(goal_id)
     if not g:
         return jsonify({"error": "not found"}), 404
-    return jsonify({k: g[k] for k in
-                    ("id", "status", "goal", "idea_summary", "transcript", "tasks", "logs")}
-                   | {"has_artifact": bool(g["artifact"])})
+    return jsonify(
+        {k: g[k] for k in ("id", "status", "goal", "idea_summary", "transcript", "tasks", "logs")}
+        | {"has_artifact": bool(g.get("artifact"))}
+    )
+
+
+@app.route("/api/goals")
+def list_goals():
+    """List recent goals from SQLite."""
+    limit = min(int(request.args.get("limit", 20)), 100)
+    return jsonify(db_list_recent(limit))
 
 
 @app.route("/api/goal/<goal_id>/approve", methods=["POST"])
-def approve(goal_id):
-    g = GOALS.get(goal_id)
+def approve(goal_id: str):
+    g = GOALS.get(goal_id) or db_load(goal_id)
     if not g:
         return jsonify({"error": "not found"}), 404
     g["status"] = "approved"
     log(g, "Approved by founder. Shipped.")
+    db_save(g)
     return jsonify({"ok": True})
 
 
 @app.route("/preview/<goal_id>")
-def preview(goal_id):
-    g = GOALS.get(goal_id)
-    if not g or not g["artifact"]:
+def preview(goal_id: str):
+    g = GOALS.get(goal_id) or db_load(goal_id)
+    if not g or not g.get("artifact"):
         return "Artifact not ready yet.", 404
     return g["artifact"]
 
 
 @app.route("/health")
 def health():
-    return jsonify({"ok": True, "model": MODEL_NAME})
+    return jsonify({"ok": True, "model": MODEL_NAME, "db": DB_PATH})
 
 
 @app.route("/")
 def index():
     return render_template_string(PAGE)
 
+
+# ── Frontend ──────────────────────────────────────────────────────────────────
 
 PAGE = r"""<!doctype html>
 <html>
@@ -305,7 +455,7 @@ $('goBtn').onclick = async () => {
   else if ($('textIdea').value.trim()) fd.append('text', $('textIdea').value.trim());
   else return alert('Record, upload or type your idea first.');
   $('goBtn').disabled = true; $('goBtn').textContent = 'Working…';
-  const r = await fetch('/idea', {method:'POST', body:fd});
+  const r = await fetch('/api/idea', {method:'POST', body:fd});
   goalId = (await r.json()).goal_id;
   poll();
 };
@@ -313,7 +463,7 @@ $('goBtn').onclick = async () => {
 async function poll() {
   const r = await fetch('/api/goal/' + goalId);
   const g = await r.json();
-  if (g.transcript) { $('goalPanel').classList.remove('hidden'); $('transcript').textContent = '“' + g.transcript + '”'; }
+  if (g.transcript) { $('goalPanel').classList.remove('hidden'); $('transcript').textContent = '"' + g.transcript + '"'; }
   if (g.goal) { $('goalText').textContent = g.goal; }
   $('statusBadge').textContent = g.status; $('statusBadge').className = 'badge ' + (g.status==='running'?'running':g.status==='awaiting_approval'||g.status==='approved'?'done':'');
   if (g.tasks.length) {
