@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZenGoal — Speak it. Ship it.</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,600;0,800;1,400&display=swap" rel="stylesheet">
+<style>
+/* ─── Reset & tokens ─────────────────────────────────────────── */
+:root {
+  --bg:      #07070f;
+  --surface: #10101c;
+  --card:    #14142000;
+  --border:  #2a2a40;
+  --acc:     #7c5cff;
+  --acc2:    #a78bfa;
+  --ok:      #34d399;
+  --warn:    #fbbf24;
+  --err:     #f87171;
+  --txt:     #e2e2f0;
+  --muted:   #7070a0;
+  --r:       14px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: Inter, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--txt);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+/* ─── Layout ─────────────────────────────────────────────────── */
+.wrap { max-width: 880px; margin: 0 auto; padding: 40px 20px 80px; }
+
+/* ─── Header ─────────────────────────────────────────────────── */
+header { margin-bottom: 44px; }
+.logo { font-size: 2.4rem; font-weight: 800; letter-spacing: -1px; }
+.logo span { color: var(--acc); }
+.tagline { color: var(--muted); margin-top: 6px; font-size: 1rem; max-width: 520px; }
+.badge-demo {
+  display: inline-block;
+  margin-top: 12px;
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--acc);
+  background: #1e1540;
+  border: 1px solid #3d2a80;
+  border-radius: 20px;
+  padding: 3px 12px;
+}
+
+/* ─── Step indicators ────────────────────────────────────────── */
+.steps-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+.step-pill {
+  display: flex; align-items: center; gap: 7px;
+  font-size: .8rem; font-weight: 600;
+  padding: 6px 14px; border-radius: 99px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--muted);
+  transition: all .3s;
+}
+.step-pill.active { color: var(--txt); border-color: var(--acc); background: #1a1535; }
+.step-pill.done   { color: var(--ok); border-color: var(--ok); background: #0d2a20; }
+.step-num {
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .72rem; font-weight: 800;
+  background: var(--border); color: var(--muted);
+  transition: all .3s;
+}
+.step-pill.active .step-num { background: var(--acc); color: #fff; }
+.step-pill.done   .step-num { background: var(--ok);  color: #000; }
+.sep { color: var(--border); font-size: 1.2rem; }
+
+/* ─── Cards / panels ─────────────────────────────────────────── */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 22px 24px;
+  margin-bottom: 16px;
+  transition: border-color .3s;
+}
+.panel.active-panel { border-color: var(--acc); }
+.panel-label {
+  font-size: .7rem; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 14px;
+}
+
+/* ─── Voice input area ───────────────────────────────────────── */
+.mic-area {
+  display: flex; flex-direction: column; gap: 12px;
+  align-items: flex-start;
+}
+.mic-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 22px; border-radius: 10px;
+  font-family: inherit; font-size: .95rem; font-weight: 600;
+  border: none; cursor: pointer; transition: all .2s;
+}
+.btn-primary { background: var(--acc); color: #fff; }
+.btn-primary:hover { background: #6a4ee0; }
+.btn-primary:active { transform: scale(.97); }
+.btn-ghost {
+  background: transparent; color: var(--acc);
+  border: 1px solid var(--acc);
+}
+.btn-ghost:hover { background: #1a1535; }
+.btn-danger { background: #b91c1c; color: #fff; }
+.btn-danger:hover { background: #991b1b; }
+.btn-success { background: #059669; color: #fff; }
+.btn-success:hover { background: #047857; }
+.btn:disabled { opacity: .45; cursor: default; transform: none !important; }
+
+.mic-pulse {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--err); display: inline-block;
+  animation: pulse-anim 1s ease-in-out infinite;
+}
+@keyframes pulse-anim { 50% { transform: scale(.5); opacity: .4; } }
+
+.voice-status {
+  font-size: .85rem; color: var(--muted);
+  min-height: 1.2em;
+  transition: color .3s;
+}
+.voice-status.listening { color: var(--ok); }
+.voice-status.ready     { color: var(--ok); }
+
+/* ─── Live transcript box ────────────────────────────────────── */
+.transcript-box {
+  position: relative;
+  width: 100%;
+  min-height: 76px;
+  background: #0a0a18;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: .95rem;
+  color: var(--txt);
+  resize: none;
+  font-family: inherit;
+  transition: border-color .3s;
+}
+.transcript-box:focus { outline: none; border-color: var(--acc); }
+.transcript-box::placeholder { color: var(--muted); }
+
+.char-hint { font-size: .75rem; color: var(--muted); margin-top: 4px; text-align: right; }
+
+/* ─── File upload pill ───────────────────────────────────────── */
+.upload-row { display: flex; align-items: center; gap: 8px; }
+.file-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 99px;
+  background: var(--surface); border: 1px dashed var(--border);
+  color: var(--muted); font-size: .82rem; cursor: pointer;
+  transition: all .2s;
+}
+.file-pill:hover { border-color: var(--acc2); color: var(--acc2); }
+#audioFile { display: none; }
+.file-name { font-size: .8rem; color: var(--ok); }
+
+/* ─── Goal card ──────────────────────────────────────────────── */
+.goal-card {
+  background: linear-gradient(135deg, #1a1040 0%, #0e0e24 100%);
+  border: 1px solid #3d2a80;
+  border-radius: var(--r);
+  padding: 20px 22px;
+  margin-bottom: 16px;
+}
+.goal-label { font-size: .7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--acc2); margin-bottom: 8px; }
+.goal-text  { font-size: 1.2rem; font-weight: 700; color: #fff; line-height: 1.4; }
+.idea-quote { font-style: italic; color: var(--muted); font-size: .88rem; margin-top: 8px; }
+
+/* ─── Agent board ────────────────────────────────────────────── */
+.board-grid {
+  display: grid;
+  gap: 10px;
+}
+.task-card {
+  background: #0a0a18;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  transition: border-color .3s;
+}
+.task-card.running { border-color: var(--warn); }
+.task-card.done    { border-color: #1a4a35; }
+.task-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.agent-tag {
+  font-size: .7rem; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; padding: 2px 9px; border-radius: 99px;
+  border: 1px solid;
+}
+.agent-Strategist  { color: #60a5fa; border-color: #1d4ed8; background: #0c1f40; }
+.agent-Designer    { color: #f472b6; border-color: #9d174d; background: #2d0a1e; }
+.agent-Copywriter  { color: #a78bfa; border-color: #5b21b6; background: #1a0d40; }
+.agent-Developer   { color: #34d399; border-color: #065f46; background: #0a2820; }
+.agent-QA          { color: #fbbf24; border-color: #92400e; background: #2a1800; }
+.agent-Assembler   { color: #fb923c; border-color: #9a3412; background: #2a0e00; }
+.agent-default     { color: var(--muted); border-color: var(--border); background: transparent; }
+
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: var(--border);
+}
+.status-dot.queued  { background: var(--border); }
+.status-dot.running { background: var(--warn); animation: pulse-anim 1s infinite; }
+.status-dot.done    { background: var(--ok); }
+
+.task-title { font-weight: 600; font-size: .9rem; color: var(--txt); }
+.task-output {
+  font-size: .8rem; color: #8888aa; white-space: pre-wrap;
+  margin-top: 8px; max-height: 100px; overflow: auto;
+  border-top: 1px solid var(--border); padding-top: 8px;
+  line-height: 1.6;
+}
+
+/* ─── Progress bar ───────────────────────────────────────────── */
+.progress-wrap {
+  background: #0a0a18; border-radius: 99px;
+  height: 6px; overflow: hidden; margin: 16px 0 10px;
+}
+.progress-bar {
+  height: 100%; border-radius: 99px;
+  background: linear-gradient(90deg, var(--acc), var(--acc2));
+  width: 0%;
+  transition: width .6s cubic-bezier(.25,.46,.45,.94);
+}
+.progress-bar.indeterminate {
+  width: 100%;
+  animation: indeterminate 1.4s linear infinite;
+  background-size: 200% 100%;
+  background: linear-gradient(90deg, transparent, var(--acc), var(--acc2), transparent);
+}
+@keyframes indeterminate {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.progress-label { font-size: .8rem; color: var(--muted); display: flex; justify-content: space-between; }
+
+/* ─── Approval banner ────────────────────────────────────────── */
+.approval-banner {
+  background: linear-gradient(135deg, #0d2a1f 0%, #0a0a18 100%);
+  border: 1px solid var(--ok);
+  border-radius: var(--r);
+  padding: 20px 24px;
+  margin-bottom: 16px;
+  display: none;
+}
+.approval-banner h3 { color: var(--ok); font-size: 1.05rem; margin-bottom: 10px; }
+.preview-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--ok); font-weight: 700; text-decoration: none;
+  font-size: .95rem; margin-bottom: 14px; display: block;
+}
+.preview-link:hover { text-decoration: underline; }
+
+/* ─── Log console ────────────────────────────────────────────── */
+.log-console {
+  font-family: ui-monospace, 'Cascadia Code', monospace;
+  font-size: .78rem;
+  color: #606080;
+  max-height: 180px;
+  overflow-y: auto;
+  line-height: 1.7;
+  padding: 2px 0;
+}
+.log-console::-webkit-scrollbar { width: 4px; }
+.log-console::-webkit-scrollbar-track { background: transparent; }
+.log-console::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.log-line { padding: 1px 0; }
+.log-line .log-ts { color: #4040608c; margin-right: 6px; }
+.log-line .log-msg { color: #8888a8; }
+.log-line.fresh .log-msg { color: var(--acc2); }
+
+/* ─── Utilities ──────────────────────────────────────────────── */
+.hidden { display: none !important; }
+.mt8  { margin-top: 8px; }
+.mt14 { margin-top: 14px; }
+.row  { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* ─── Splash animation on load ───────────────────────────────── */
+@keyframes fadein { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:none; } }
+.wrap > * { animation: fadein .5s ease both; }
+.wrap > *:nth-child(1) { animation-delay: 0s; }
+.wrap > *:nth-child(2) { animation-delay: .05s; }
+.wrap > *:nth-child(3) { animation-delay: .1s; }
+.wrap > *:nth-child(4) { animation-delay: .15s; }
+.wrap > *:nth-child(5) { animation-delay: .2s; }
+.wrap > *:nth-child(6) { animation-delay: .25s; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ─ Header ─────────────────────────────────────────── -->
+  <header>
+    <div class="logo">Zen<span>Goal</span></div>
+    <div class="tagline">Speak your business idea. One goal is set. An AI agent pipeline builds it. You ship it.</div>
+    <span class="badge-demo">⚡ Powered by Gemini · Stanford × DeepMind Hackathon</span>
+  </header>
+
+  <!-- ─ Step indicators ────────────────────────────────── -->
+  <div class="steps-row" id="stepsRow">
+    <div class="step-pill active" id="step1">
+      <div class="step-num">1</div> Capture idea
+    </div>
+    <div class="sep">›</div>
+    <div class="step-pill" id="step2">
+      <div class="step-num">2</div> AI agents build
+    </div>
+    <div class="sep">›</div>
+    <div class="step-pill" id="step3">
+      <div class="step-num">3</div> Ship &amp; approve
+    </div>
+  </div>
+
+  <!-- ─ Input panel ────────────────────────────────────── -->
+  <div class="panel active-panel" id="inputPanel">
+    <div class="panel-label">Step 1 — Your idea</div>
+
+    <div class="mic-area">
+      <!-- Voice controls -->
+      <div class="mic-row">
+        <button class="btn btn-primary" id="speechBtn" title="Uses browser Speech API (live transcription)">
+          🎙 Start speaking
+        </button>
+        <button class="btn btn-ghost" id="recBtn" title="Record audio clip and send to Gemini for transcription">
+          ⏺ Record memo
+        </button>
+        <label class="file-pill" for="audioFile">
+          📎 Upload audio
+        </label>
+        <input type="file" id="audioFile" accept="audio/*">
+        <span class="file-name hidden" id="fileName"></span>
+      </div>
+      <div class="voice-status" id="voiceStatus">Click a button above to add voice, or type below ↓</div>
+
+      <!-- Text area — fills live via Speech API or manually -->
+      <textarea
+        class="transcript-box"
+        id="textIdea"
+        rows="3"
+        maxlength="2000"
+        placeholder="I want to launch a specialty coffee subscription for remote workers..."
+      ></textarea>
+      <div class="char-hint"><span id="charCount">0</span> / 2000</div>
+
+      <!-- Submit -->
+      <div class="row mt8">
+        <button class="btn btn-primary" id="goBtn">
+          ⚡ Set the goal
+        </button>
+        <span id="submitHint" style="font-size:.82rem;color:var(--muted)">Type, speak, or upload — then hit Set the goal</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─ Goal card (hidden until planning done) ─────────── -->
+  <div class="goal-card hidden" id="goalCard">
+    <div class="goal-label">🎯 Goal</div>
+    <div class="goal-text" id="goalText"></div>
+    <div class="idea-quote" id="ideaQuote"></div>
+  </div>
+
+  <!-- ─ Agent pipeline board ───────────────────────────── -->
+  <div class="panel hidden" id="boardPanel">
+    <div class="panel-label" style="display:flex;justify-content:space-between">
+      <span>Step 2 — Agent pipeline</span>
+      <span id="taskCounter" style="color:var(--muted);font-size:.7rem"></span>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar indeterminate" id="progressBar"></div>
+    </div>
+    <div class="progress-label">
+      <span id="progressPhase">Initializing…</span>
+      <span id="progressPct"></span>
+    </div>
+    <div class="board-grid mt14" id="boardGrid"></div>
+  </div>
+
+  <!-- ─ Approval banner ────────────────────────────────── -->
+  <div class="approval-banner" id="approvalBanner">
+    <h3>✅ Pipeline complete — your deliverable is live</h3>
+    <a class="preview-link" id="previewLink" href="#" target="_blank">
+      🔗 Open the shipped result →
+    </a>
+    <div class="row">
+      <button class="btn btn-success" id="approveBtn">✓ Approve &amp; ship</button>
+      <span class="hidden" id="approvedMsg" style="color:var(--ok);font-weight:600">
+        🚀 Shipped. Goal closed.
+      </span>
+    </div>
+  </div>
+
+  <!-- ─ Live log ────────────────────────────────────────── -->
+  <div class="panel">
+    <div class="panel-label">Live log</div>
+    <div class="log-console" id="logConsole">
+      <div class="log-line"><span class="log-msg" style="color:var(--muted)">Waiting for your idea…</span></div>
+    </div>
+  </div>
+
+</div><!-- /wrap -->
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   ZenGoal frontend — voice input + pipeline polling
+   ═══════════════════════════════════════════════════════════════ */
+
+// ── DOM helpers ──────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const show = el => el.classList.remove('hidden');
+const hide = el => el.classList.add('hidden');
+
+// ── State ────────────────────────────────────────────────────────
+let goalId        = null;
+let pollTimer     = null;
+let lastLogCount  = 0;
+
+// MediaRecorder state
+let mediaRec    = null;
+let recChunks   = [];
+let recBlob     = null;
+let isRecording = false;
+
+// SpeechRecognition state
+let speechRec    = null;
+let isSpeaking   = false;
+let speechFinal  = '';   // accumulated final transcript segments
+
+// ── Character counter ────────────────────────────────────────────
+$('textIdea').addEventListener('input', () => {
+  $('charCount').textContent = $('textIdea').value.length;
+});
+
+// ── File picker ──────────────────────────────────────────────────
+$('audioFile').addEventListener('change', () => {
+  const f = $('audioFile').files[0];
+  if (f) {
+    $('fileName').textContent = '📎 ' + f.name;
+    show($('fileName'));
+    setVoiceStatus('File ready: ' + f.name, 'ready');
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// 1. Web Speech API (live transcription, Chrome/Edge only)
+// ─────────────────────────────────────────────────────────────────
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+$('speechBtn').addEventListener('click', () => {
+  if (!SpeechRecognition) {
+    alert('Your browser does not support the Web Speech API.\nUse the ⏺ Record memo button or type your idea.');
+    return;
+  }
+
+  if (isSpeaking) {
+    // Stop
+    speechRec.stop();
+    return;
+  }
+
+  // Start
+  speechRec = new SpeechRecognition();
+  speechRec.continuous     = true;
+  speechRec.interimResults = true;
+  speechRec.lang           = 'en-US';
+
+  speechFinal = $('textIdea').value.trim();  // keep any existing text
+
+  speechRec.onstart = () => {
+    isSpeaking = true;
+    $('speechBtn').innerHTML = '⏹ Stop speaking';
+    $('speechBtn').classList.replace('btn-primary', 'btn-danger');
+    setVoiceStatus('🔴 Listening… speak your idea now', 'listening');
+  };
+
+  speechRec.onresult = e => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) {
+        speechFinal += (speechFinal ? ' ' : '') + e.results[i][0].transcript.trim();
+      } else {
+        interim += e.results[i][0].transcript;
+      }
+    }
+    $('textIdea').value = speechFinal + (interim ? ' ' + interim : '');
+    $('charCount').textContent = $('textIdea').value.length;
+  };
+
+  speechRec.onerror = e => {
+    console.warn('SpeechRecognition error:', e.error);
+    if (e.error === 'not-allowed') {
+      setVoiceStatus('Microphone permission denied — please allow mic access and try again.', '');
+    } else {
+      setVoiceStatus('Recognition error: ' + e.error, '');
+    }
+    stopSpeech();
+  };
+
+  speechRec.onend = () => {
+    stopSpeech();
+    if ($('textIdea').value.trim()) {
+      setVoiceStatus('✓ Transcript ready — hit "Set the goal" to continue', 'ready');
+    }
+  };
+
+  speechRec.start();
+});
+
+function stopSpeech() {
+  isSpeaking = false;
+  $('speechBtn').innerHTML = '🎙 Start speaking';
+  $('speechBtn').classList.replace('btn-danger', 'btn-primary');
+}
+
+// ─────────────────────────────────────────────────────────────────
+// 2. MediaRecorder (audio blob → Gemini transcription on server)
+// ─────────────────────────────────────────────────────────────────
+$('recBtn').addEventListener('click', async () => {
+  if (isRecording) {
+    // Stop
+    mediaRec.stop();
+    mediaRec.stream.getTracks().forEach(t => t.stop());
+    isRecording = false;
+    $('recBtn').innerHTML = '⏺ Record memo';
+    $('recBtn').classList.replace('btn-danger', 'btn-ghost');
+    setVoiceStatus('Voice memo ready — Gemini will transcribe it on submit', 'ready');
+    return;
+  }
+
+  // Start
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recChunks = [];
+    recBlob   = null;
+
+    // Pick best supported mime
+    const mimes = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'];
+    const mime  = mimes.find(m => MediaRecorder.isTypeSupported(m)) || '';
+    mediaRec = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
+
+    mediaRec.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
+    mediaRec.onstop = () => {
+      recBlob = new Blob(recChunks, { type: mediaRec.mimeType || 'audio/webm' });
+    };
+
+    mediaRec.start(100);
+    isRecording = true;
+    $('recBtn').innerHTML = '⏹ Stop recording';
+    $('recBtn').classList.replace('btn-ghost', 'btn-danger');
+    setVoiceStatus('🔴 Recording audio memo…', 'listening');
+  } catch (err) {
+    setVoiceStatus('Microphone access denied: ' + err.message, '');
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// 3. Submit
+// ─────────────────────────────────────────────────────────────────
+$('goBtn').addEventListener('click', async () => {
+  // Stop any active recording/speech
+  if (isRecording) { mediaRec.stop(); mediaRec.stream.getTracks().forEach(t => t.stop()); isRecording = false; await sleep(200); }
+  if (isSpeaking)  { speechRec.stop(); await sleep(200); }
+
+  const fd   = new FormData();
+  const file = $('audioFile').files[0];
+
+  if (recBlob) {
+    fd.append('audio', recBlob, 'memo.webm');
+  } else if (file) {
+    fd.append('audio', file, file.name);
+  } else if ($('textIdea').value.trim()) {
+    fd.append('text', $('textIdea').value.trim());
+  } else {
+    alert('Please speak, record, upload, or type your idea first.');
+    return;
+  }
+
+  // UI: lock input panel
+  $('goBtn').disabled = true;
+  $('goBtn').innerHTML = '⚡ Setting goal…';
+  $('inputPanel').classList.remove('active-panel');
+
+  try {
+    const res  = await fetch('/api/idea', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok || !data.goal_id) {
+      throw new Error(data.error || 'API error ' + res.status);
+    }
+    goalId = data.goal_id;
+    advanceStep(2);
+    startPolling();
+  } catch (err) {
+    $('goBtn').disabled = false;
+    $('goBtn').innerHTML = '⚡ Set the goal';
+    $('inputPanel').classList.add('active-panel');
+    alert('Error: ' + err.message);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────
+// 4. Polling
+// ─────────────────────────────────────────────────────────────────
+function startPolling() {
+  clearTimeout(pollTimer);
+  poll();
+}
+
+async function poll() {
+  try {
+    const res = await fetch('/api/goal/' + goalId);
+    if (!res.ok) return scheduleNext(3000);
+    const g = await res.json();
+    updateUI(g);
+    const terminal = ['awaiting_approval', 'approved', 'failed'].includes(g.status);
+    if (!terminal) scheduleNext(1200);
+  } catch (e) {
+    scheduleNext(3000);
+  }
+}
+
+function scheduleNext(ms) {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(poll, ms);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// 5. UI updates
+// ─────────────────────────────────────────────────────────────────
+function updateUI(g) {
+  // Goal card
+  if (g.goal) {
+    show($('goalCard'));
+    $('goalText').textContent = g.goal;
+    if (g.transcript) $('ideaQuote').textContent = '💬 "' + g.transcript + '"';
+  }
+
+  // Board
+  if (g.tasks && g.tasks.length) {
+    show($('boardPanel'));
+    renderBoard(g.tasks, g.status);
+  }
+
+  // Approval
+  if (g.has_artifact && g.status === 'awaiting_approval') {
+    $('approvalBanner').style.display = 'block';
+    $('previewLink').href = '/preview/' + goalId;
+    advanceStep(3);
+  }
+  if (g.status === 'approved') {
+    advanceStep(3, true);
+  }
+
+  // Logs
+  renderLogs(g.logs || []);
+}
+
+function renderBoard(tasks, status) {
+  const done  = tasks.filter(t => t.status === 'done').length;
+  const total = tasks.length;
+
+  $('taskCounter').textContent = done + ' / ' + total + ' done';
+
+  // Progress
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  const bar = $('progressBar');
+  if (status === 'running') {
+    bar.classList.add('indeterminate');
+    bar.style.width = '';
+    $('progressPhase').textContent = tasks.find(t => t.status === 'running')
+      ? '🤖 ' + tasks.find(t => t.status === 'running').agent + ' is working…'
+      : 'Processing…';
+    $('progressPct').textContent = pct + '%';
+  } else {
+    bar.classList.remove('indeterminate');
+    bar.style.width = (status === 'awaiting_approval' || status === 'approved' ? 100 : pct) + '%';
+    $('progressPhase').textContent =
+      status === 'awaiting_approval' ? '✅ Pipeline complete' :
+      status === 'approved'          ? '🚀 Shipped'          :
+      status === 'failed'            ? '❌ Pipeline failed'  : 'Idle';
+    $('progressPct').textContent = '';
+  }
+
+  // Task cards
+  $('boardGrid').innerHTML = tasks.map(t => {
+    const agentClass = 'agent-' + (t.agent || 'default');
+    const dotClass   = 'status-dot ' + (t.status || 'queued');
+    const cardClass  = 'task-card ' + (t.status || 'queued');
+    const out = t.output
+      ? `<div class="task-output">${escHtml(t.output.substring(0, 400))}${t.output.length > 400 ? '…' : ''}</div>`
+      : '';
+    return `
+      <div class="${cardClass}">
+        <div class="task-head">
+          <div class="${dotClass}"></div>
+          <span class="agent-tag ${agentClass}">${escHtml(t.agent || 'Agent')}</span>
+          <span class="task-title">${escHtml(t.title || '')}</span>
+        </div>
+        ${out}
+      </div>`;
+  }).join('');
+}
+
+function renderLogs(logs) {
+  if (!logs.length) return;
+  const fresh = logs.length > lastLogCount;
+  $('logConsole').innerHTML = logs.map((l, i) => {
+    const isFresh = fresh && i >= lastLogCount;
+    return `<div class="log-line ${isFresh ? 'fresh' : ''}">
+      <span class="log-ts">[${escHtml(l.t)}]</span>
+      <span class="log-msg">${escHtml(l.msg)}</span>
+    </div>`;
+  }).join('');
+  $('logConsole').scrollTop = 1e9;
+  lastLogCount = logs.length;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// 6. Step pills
+// ─────────────────────────────────────────────────────────────────
+function advanceStep(n, final = false) {
+  for (let i = 1; i <= 3; i++) {
+    const el = $('step' + i);
+    if (i < n)  { el.className = 'step-pill done'; }
+    else if (i === n) { el.className = 'step-pill active'; }
+    else { el.className = 'step-pill'; }
+  }
+  if (final) { $('step3').className = 'step-pill done'; }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// 7. Approve button
+// ─────────────────────────────────────────────────────────────────
+$('approveBtn').addEventListener('click', async () => {
+  $('approveBtn').disabled = true;
+  await fetch('/api/goal/' + goalId + '/approve', { method: 'POST' });
+  show($('approvedMsg'));
+  advanceStep(3, true);
+  poll();  // final update
+});
+
+// ─────────────────────────────────────────────────────────────────
+// 8. Utilities
+// ─────────────────────────────────────────────────────────────────
+function setVoiceStatus(msg, cls) {
+  const el = $('voiceStatus');
+  el.textContent = msg;
+  el.className   = 'voice-status ' + (cls || '');
+}
+
+function escHtml(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>

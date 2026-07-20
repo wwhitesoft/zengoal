@@ -12,7 +12,7 @@ import threading
 import time
 import uuid
 
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, render_template, render_template_string, request
 
 import google.generativeai as genai
 
@@ -348,7 +348,11 @@ def health():
 
 @app.route("/")
 def index():
-    return render_template_string(PAGE)
+    try:
+        return render_template("index.html")
+    except Exception:
+        # Fallback to inline PAGE if template file is missing (e.g. old deploy)
+        return render_template_string(PAGE)
 
 
 # ── Frontend ──────────────────────────────────────────────────────────────────
