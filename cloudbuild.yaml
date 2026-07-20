@@ -1,0 +1,47 @@
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/zengoal:$COMMIT_SHA'
+      - '.'
+
+  # Push the container image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/zengoal:$COMMIT_SHA'
+
+  # Deploy container image to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'zengoal'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/zengoal:$COMMIT_SHA'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'GEMINI_API_KEY=$$GEMINI_API_KEY,GEMINI_MODEL=gemini-3-flash-preview'
+      - '--project'
+      - '$PROJECT_ID'
+
+images:
+  - 'gcr.io/$PROJECT_ID/zengoal:$COMMIT_SHA'
+
+substitutions:
+  _REGION: us-central1
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/GEMINI_API_KEY/versions/latest
+      env: 'GEMINI_API_KEY'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
